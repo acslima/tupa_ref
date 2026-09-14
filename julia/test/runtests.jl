@@ -1,7 +1,7 @@
 using Test, Tupa, FFTW
 
 @testset "Tukey antialias filter" begin
-    w=tukey_antialias(9;alpha=.75)
+    w=tukey_antialias(9;alpha=.15)
     @test w[1] == 1
     @test w[3] == 1
     @test w[end] == 0

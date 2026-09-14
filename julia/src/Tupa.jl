@@ -1,8 +1,9 @@
 module Tupa
-using FFTW, JSON3, LinearAlgebra, Printf, SpecialFunctions
+using FFTW, JSON3, LinearAlgebra, Plots, Printf, SpecialFunctions
 export Study, load_study, prepare!, solve_frequency, run_sweep, run_file,
        transient_response, tukey_antialias, sample_time_axis,
-       one_sided_frequency_axis, heidler, double_exponential
+       one_sided_frequency_axis, heidler, double_exponential,
+       write_transient_plot
 const EPS0=8.8541878128e-12; const MU0=1.25663706212e-6; const DEFAULT_TUKEY_ALPHA=.75
 
 struct Material
@@ -107,7 +108,7 @@ end
 "Solve HEM at angular frequency omega; return node voltage and end currents."
 function solve_frequency(s,omega,source_ids,source_values)
     prepare!(s);nn=length(s.nodes);ns=length(s.segments);g=s.geom
-    A=zeros(ComplexF64,ns,nn);B=similar(A);C=zeros(ComplexF64,nn,ns);D=similar(C)
+    A=zeros(ComplexF64,ns,nn);B=zeros(ComplexF64,ns,nn);C=zeros(ComplexF64,nn,ns);D=zeros(ComplexF64,nn,ns)
     for (i,q) in pairs(s.segments);A[i,q.n1]=-1;A[i,q.n2]=1;B[i,q.n1]=B[i,q.n2]=-.5;C[q.n1,i]=1;D[q.n2,i]=1;end
     wa=admittance(s.air,omega);ws=admittance(s.soil,omega)
     pars=((1/(4pi*wa),im*omega*s.air.mur*MU0/(4pi),sqrt(im*omega*s.air.mur*MU0*wa),-1.),(1/(4pi*ws),im*omega*s.soil.mur*MU0/(4pi),sqrt(im*omega*s.soil.mur*MU0*ws),1.))
@@ -161,9 +162,26 @@ function write_csv(path,r)
         for k=eachindex(r.time);@printf(io,"%.16e,%.16e",r.time[k],r.injected_current[k]);for i=eachindex(r.node_ids);@printf(io,",%.16e",r.voltage[i,k]);end;for i=eachindex(r.electrode_ids);@printf(io,",%.16e,%.16e",r.i1[i,k],r.i2[i,k]);end;println(io);end
     end
 end
+"Save injected current and node-voltage waveforms from a transient result."
+function write_transient_plot(path::AbstractString,r)
+    time_us=r.time .* 1e6
+    current_plot=plot(time_us,r.injected_current ./ 1e3;
+        xlabel="Time (μs)",ylabel="Current (kA)",label="Injected current",
+        linewidth=2,grid=true,legend=:topright)
+    voltage_plot=plot(;xlabel="Time (μs)",ylabel="Voltage (kV)",
+        grid=true,legend=:topright)
+    for (i,id) in pairs(r.node_ids)
+        plot!(voltage_plot,time_us,r.voltage[i,:] ./ 1e3;
+            label="Voltage $id",linewidth=2)
+    end
+    figure=plot(current_plot,voltage_plot;layout=(2,1),size=(900,700),
+        plot_title="TUPÃ transient response")
+    savefig(figure,path)
+    path
+end
 function run_file(path::AbstractString)
     s,root=load_study(path);base=splitext(basename(path))[1]
-    if haskey(root,:signal);r=transient_response(s,root[:signal]);out=base*"_transient_results.csv";write_csv(out,r);println("wrote $out (Tukey antialias alpha=$(r.tukey_alpha))");return r
+    if haskey(root,:signal);r=transient_response(s,root[:signal]);out=base*"_transient_results.csv";figure=base*"_transient_plot.png";write_csv(out,r);write_transient_plot(figure,r);println("wrote $out and $figure (Tukey antialias alpha=$(r.tukey_alpha))");return r
     elseif haskey(root,:sources)&&haskey(root,:frequencies);f=root[:frequencies];count=round(Int,Float64(f[:pointsPerDecade])*log10(Float64(f[:max])/Float64(f[:min])))+1;freqs=10 .^ range(log10(Float64(f[:min])),log10(Float64(f[:max])),length=count);ids=String[x[:node] for x in root[:sources]];vals=ComplexF64[complex(Float64(x[:current][:re]),Float64(x[:current][:im])) for x in root[:sources]];return run_sweep(s,freqs,ids,vals)
     end
     println("$(s.title): $(length(s.nodes)) nodes, $(length(s.segments)) electrode segments");s
