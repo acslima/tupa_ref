@@ -46,3 +46,35 @@ digitized points from a per-case xlsx (e.g.
 the TUPÃ curve out of the `fpm run` output above. Rerun the
 script after regenerating either input to refresh the SVG under
 `../figures/`.
+
+## Run every comparison
+
+Create a Python environment once from the repository root:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r docs/validation/requirements.txt
+```
+
+Then run the complete validation pipeline:
+
+```sh
+./docs/validation/run_all.sh
+```
+
+This builds the reference Fortran implementation, runs all 18 JSON studies,
+regenerates the six literature-comparison figures, reruns the matched Julia
+Tupa/mHEM/MoM pipeline, and writes SVG, PDF, and (for the Julia comparisons)
+PNG figures under `docs/figures/`. The aligned mHEM archive must be named
+`transient-analysis-grounding-systems-julia-tupa-aligned.zip` in the
+repository root. Alternatively, set `MHEM_ZIP` to its full path.
+
+To regenerate plots from existing Fortran result JSON files without rerunning
+the 18 Fortran studies:
+
+```sh
+./docs/validation/run_all.sh --plots-only
+```
+
+The 100 m Grcev studies and transient studies are computationally expensive;
+the complete run can take considerably longer than the plotting-only mode.

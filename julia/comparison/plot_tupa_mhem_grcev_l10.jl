@@ -3,7 +3,7 @@
 using Plots
 using Plots.PlotMeasures
 
-length(ARGS) == 3 || error("usage: julia plot_tupa_mhem_grcev_l10.jl <solver-results.csv> <reference-results.csv> <output.png>")
+length(ARGS) >= 3 || error("usage: julia plot_tupa_mhem_grcev_l10.jl <solver-results.csv> <reference-results.csv> <output> [<output> ...]")
 
 function read_numeric_csv(path)
     lines = readlines(path)
@@ -64,4 +64,6 @@ figure = plot(panels[1], panels[3], panels[5], panels[2], panels[4], panels[6];
               layout=(2, 3), size=(1500, 1000),
               left_margin=5mm, bottom_margin=7mm,
               plot_title="10 m horizontal electrode: Tupa and mHEM vs Grcev full-wave reference")
-savefig(figure, ARGS[3])
+for path in ARGS[3:end]
+    savefig(figure, path)
+end

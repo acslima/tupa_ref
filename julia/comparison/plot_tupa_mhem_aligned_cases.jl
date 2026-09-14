@@ -3,8 +3,8 @@
 using Plots
 using Plots.PlotMeasures
 
-length(ARGS) == 6 || error(
-    "usage: julia plot_tupa_mhem_aligned_cases.jl <grcev.csv> <tupa-rod.csv> <mhem-rod.csv> <mom-reference.csv> <output.png> <output.svg>",
+length(ARGS) >= 5 || error(
+    "usage: julia plot_tupa_mhem_aligned_cases.jl <grcev.csv> <tupa-rod.csv> <mhem-rod.csv> <mom-reference.csv> <output> [<output> ...]",
 )
 
 function read_solver_csv(path)
@@ -108,5 +108,6 @@ figure = plot(
     layout=(2, 4), size=(2000, 1000), left_margin=8mm, bottom_margin=7mm,
     plot_title="Tupa and mHEM compared with full-wave MoM results",
 )
-savefig(figure, ARGS[5])
-savefig(figure, ARGS[6])
+for path in ARGS[5:end]
+    savefig(figure, path)
+end
