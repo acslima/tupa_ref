@@ -6,7 +6,7 @@ using Printf
 length(ARGS) == 2 || error("usage: julia run_mhem_grcev_l10.jl <extracted-mhem-directory> <output.csv>")
 include(joinpath(abspath(ARGS[1]), "hem.jl"))
 
-const FREQUENCIES = 10.0 .^ range(2, 7, length=101)
+const FREQUENCIES = 10.0 .^ range(2, 7, length=401)
 const RESISTIVITIES = (30.0, 300.0, 3000.0)
 const LENGTH = 10.0
 const RADIUS = 7e-3
@@ -85,4 +85,3 @@ open(ARGS[2], "w") do io
         end
     end
 end
-

@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -26,7 +25,7 @@ def main() -> None:
     parser.add_argument("--reference", required=True, type=Path)
     parser.add_argument("--results", required=True, type=Path)
     parser.add_argument("--metrics", required=True, type=Path)
-    parser.add_argument("--plot", required=True, type=Path)
+    parser.add_argument("--reference-results", required=True, type=Path)
     args = parser.parse_args()
 
     tupa = pd.read_csv(args.tupa)
@@ -37,80 +36,67 @@ def main() -> None:
 
     raw_reference = pd.read_excel(args.reference, sheet_name=0, header=None)
     metrics: list[dict[str, float | str]] = []
-    reference_cases: dict[float, tuple[np.ndarray, np.ndarray]] = {}
+    reference_rows: list[dict[str, float]] = []
 
     for column, rho in zip((0, 2, 4), RHO_VALUES):
         values = raw_reference.iloc[3:, column : column + 2].dropna().astype(float)
         reference_frequency = values.iloc[:, 0].to_numpy()
         reference_magnitude = values.iloc[:, 1].to_numpy()
-        reference_cases[rho] = reference_frequency, reference_magnitude
-
         predicted = {}
         for solver, frame in (("Tupa", tupa), ("mHEM", mhem)):
             predicted[solver] = interpolated_magnitude(frame, rho, reference_frequency)
-            relative_error = (predicted[solver] - reference_magnitude) / reference_magnitude
+            for scope, mask in (("100 Hz–10 MHz", np.ones(len(reference_frequency), dtype=bool)),
+                                ("100 Hz–1 MHz", reference_frequency <= 1e6)):
+                observed = reference_magnitude[mask]
+                estimate = predicted[solver][mask]
+                relative_error = (estimate - observed) / observed
+                db_error = 20 * np.log10(estimate / observed)
+                metrics.append(
+                    {
+                        "comparison": f"{solver} vs full-wave reference",
+                        "scope": scope,
+                        "rho_ohm_m": rho,
+                        "points": np.count_nonzero(mask),
+                        "mean_abs_percent_error": 100 * np.mean(np.abs(relative_error)),
+                        "median_abs_percent_error": 100 * np.median(np.abs(relative_error)),
+                        "max_abs_percent_error": 100 * np.max(np.abs(relative_error)),
+                        "relative_l2_percent": 100 * np.linalg.norm(estimate - observed) / np.linalg.norm(observed),
+                        "mean_abs_db_error": np.mean(np.abs(db_error)),
+                    }
+                )
+
+        solver_difference = (predicted["Tupa"] - predicted["mHEM"]) / predicted["mHEM"]
+        for scope, mask in (("100 Hz–10 MHz", np.ones(len(reference_frequency), dtype=bool)),
+                            ("100 Hz–1 MHz", reference_frequency <= 1e6)):
             metrics.append(
                 {
-                    "comparison": f"{solver} vs full-wave reference",
+                    "comparison": "Tupa vs mHEM at reference frequencies",
+                    "scope": scope,
                     "rho_ohm_m": rho,
-                    "points": len(reference_frequency),
-                    "mean_abs_percent_error": 100 * np.mean(np.abs(relative_error)),
-                    "median_abs_percent_error": 100 * np.median(np.abs(relative_error)),
-                    "max_abs_percent_error": 100 * np.max(np.abs(relative_error)),
-                    "relative_l2_percent": 100 * np.linalg.norm(predicted[solver] - reference_magnitude) / np.linalg.norm(reference_magnitude),
+                    "points": np.count_nonzero(mask),
+                    "mean_abs_percent_error": 100 * np.mean(np.abs(solver_difference[mask])),
+                    "median_abs_percent_error": 100 * np.median(np.abs(solver_difference[mask])),
+                    "max_abs_percent_error": 100 * np.max(np.abs(solver_difference[mask])),
+                    "relative_l2_percent": 100 * np.linalg.norm(predicted["Tupa"][mask] - predicted["mHEM"][mask]) / np.linalg.norm(predicted["mHEM"][mask]),
+                    "mean_abs_db_error": np.mean(np.abs(20 * np.log10(predicted["Tupa"][mask] / predicted["mHEM"][mask]))),
+                }
+            )
+        for index, frequency in enumerate(reference_frequency):
+            reference_rows.append(
+                {
+                    "rho_ohm_m": rho,
+                    "frequency_hz": frequency,
+                    "reference_magnitude_ohm": reference_magnitude[index],
+                    "tupa_magnitude_ohm": predicted["Tupa"][index],
+                    "mhem_magnitude_ohm": predicted["mHEM"][index],
+                    "tupa_error_percent": 100 * (predicted["Tupa"][index] - reference_magnitude[index]) / reference_magnitude[index],
+                    "mhem_error_percent": 100 * (predicted["mHEM"][index] - reference_magnitude[index]) / reference_magnitude[index],
                 }
             )
 
-        solver_difference = (predicted["Tupa"] - predicted["mHEM"]) / predicted["mHEM"]
-        metrics.append(
-            {
-                "comparison": "Tupa vs mHEM at reference frequencies",
-                "rho_ohm_m": rho,
-                "points": len(reference_frequency),
-                "mean_abs_percent_error": 100 * np.mean(np.abs(solver_difference)),
-                "median_abs_percent_error": 100 * np.median(np.abs(solver_difference)),
-                "max_abs_percent_error": 100 * np.max(np.abs(solver_difference)),
-                "relative_l2_percent": 100 * np.linalg.norm(predicted["Tupa"] - predicted["mHEM"]) / np.linalg.norm(predicted["mHEM"]),
-            }
-        )
-
     metrics_frame = pd.DataFrame(metrics)
     metrics_frame.to_csv(args.metrics, index=False)
-
-    fig, axes = plt.subplots(2, 3, figsize=(14, 8), sharex="col")
-    colors = {"Tupa": "#0072B2", "mHEM": "#D55E00"}
-    for index, rho in enumerate(RHO_VALUES):
-        reference_frequency, reference_magnitude = reference_cases[rho]
-        magnitude_axis = axes[0, index]
-        error_axis = axes[1, index]
-        magnitude_axis.scatter(reference_frequency, reference_magnitude, s=24,
-                               facecolors="none", edgecolors="black",
-                               label="Full-wave reference", zorder=3)
-        for solver, frame in (("Tupa", tupa), ("mHEM", mhem)):
-            case = frame.loc[frame["rho_ohm_m"] == rho].sort_values("frequency_hz")
-            magnitude_axis.plot(case["frequency_hz"], case["z_magnitude_ohm"],
-                                color=colors[solver], linewidth=1.8, label=solver)
-            prediction = interpolated_magnitude(frame, rho, reference_frequency)
-            error = 100 * (prediction - reference_magnitude) / reference_magnitude
-            error_axis.plot(reference_frequency, error, marker="o", markersize=3,
-                            color=colors[solver], linewidth=1.2, label=solver)
-        magnitude_axis.set_xscale("log")
-        magnitude_axis.set_yscale("log")
-        magnitude_axis.grid(True, which="both", alpha=0.25)
-        magnitude_axis.set_title(f"ρ = {rho:g} Ω·m")
-        error_axis.axhline(0, color="black", linewidth=0.8)
-        error_axis.set_xscale("log")
-        error_axis.grid(True, which="both", alpha=0.25)
-        error_axis.set_xlabel("Frequency (Hz)")
-        if index == 0:
-            magnitude_axis.set_ylabel("|Zₕ| (Ω)")
-            error_axis.set_ylabel("Error vs reference (%)")
-            magnitude_axis.legend(loc="best")
-            error_axis.legend(loc="best")
-    fig.suptitle("10 m horizontal electrode: Tupa and mHEM vs Grcev full-wave reference")
-    fig.tight_layout()
-    args.plot.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.plot, dpi=180, bbox_inches="tight")
+    pd.DataFrame(reference_rows).to_csv(args.reference_results, index=False)
 
 
 if __name__ == "__main__":

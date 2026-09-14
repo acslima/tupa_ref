@@ -4,7 +4,7 @@ using Printf
 using Tupa
 
 length(ARGS) == 2 || error("usage: julia run_tupa_grcev_l10.jl <repository-root> <output.csv>")
-const FREQUENCIES = 10.0 .^ range(2, 7, length=101)
+const FREQUENCIES = 10.0 .^ range(2, 7, length=401)
 const CASES = ((30.0, "grcev_fig12_l10_rho30.json"),
                (300.0, "grcev_fig12_l10_rho300.json"),
                (3000.0, "grcev_fig12_l10_rho3000.json"))
@@ -22,4 +22,3 @@ open(ARGS[2], "w") do io
         end
     end
 end
-
